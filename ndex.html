@@ -1,0 +1,1654 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>CyberFlap RL - Reinforcement Learning Flappy Bird</title>
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Chart.js for real-time RL analytics -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <!-- Lucide Icons -->
+  <script src="https://unpkg.com/lucide@latest"></script>
+  <!-- Font -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@400;600;700&family=JetBrains+Mono:wght@400;600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          fontFamily: {
+            mono: ['"JetBrains Mono"', 'monospace'],
+            arcade: ['"Chakra Petch"', 'sans-serif'],
+            sans: ['Inter', 'sans-serif'],
+          },
+          colors: {
+            cyber: {
+              bg: '#0a0d14',
+              surface: '#111726',
+              border: '#1f293d',
+              neon: '#00f3ff',
+              green: '#00ff66',
+              amber: '#ffb703',
+              pink: '#ff0055',
+              purple: '#9d4edd',
+            }
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    /* Custom glow and arcade accents */
+    .neon-text-cyan {
+      text-shadow: 0 0 10px rgba(0, 243, 255, 0.6), 0 0 20px rgba(0, 243, 255, 0.3);
+    }
+    .neon-text-green {
+      text-shadow: 0 0 10px rgba(0, 255, 102, 0.6), 0 0 20px rgba(0, 255, 102, 0.3);
+    }
+    .neon-box-cyan {
+      box-shadow: 0 0 15px rgba(0, 243, 255, 0.15), inset 0 0 15px rgba(0, 243, 255, 0.05);
+    }
+    .crt-scanlines {
+      background: linear-gradient(
+        rgba(18, 16, 16, 0) 50%, 
+        rgba(0, 0, 0, 0.25) 50%
+      ), linear-gradient(
+        90deg,
+        rgba(255, 0, 0, 0.03),
+        rgba(0, 255, 0, 0.01),
+        rgba(0, 0, 255, 0.03)
+      );
+      background-size: 100% 4px, 6px 100%;
+      pointer-events: none;
+    }
+    /* Custom scrollbar */
+    ::-webkit-scrollbar {
+      width: 6px;
+      height: 6px;
+    }
+    ::-webkit-scrollbar-track {
+      background: #0a0d14;
+    }
+    ::-webkit-scrollbar-thumb {
+      background: #1f293d;
+      border-radius: 3px;
+    }
+    ::-webkit-scrollbar-thumb:hover {
+      background: #00f3ff;
+    }
+  </style>
+</head>
+<body class="bg-[#07090e] text-slate-200 font-sans min-h-screen selection:bg-cyan-500 selection:text-black overflow-x-hidden">
+
+  <!-- Header Bar -->
+  <header class="border-b border-cyber-border bg-cyber-surface/70 backdrop-blur-md sticky top-0 z-50">
+    <div class="max-w-7xl mx-auto px-4 py-3 flex items-center justify-between">
+      <div class="flex items-center gap-3">
+        <div class="w-9 h-9 rounded-xl bg-gradient-to-tr from-cyan-500 to-emerald-400 p-[1.5px] shadow-lg shadow-cyan-500/20">
+          <div class="w-full h-full bg-cyber-bg rounded-[10px] flex items-center justify-center">
+            <i data-lucide="cpu" class="w-5 h-5 text-cyber-neon"></i>
+          </div>
+        </div>
+        <div>
+          <h1 class="text-xl font-bold font-arcade tracking-wider flex items-center gap-2">
+            CYBER<span class="text-cyber-neon">FLAP</span>
+            <span class="text-[10px] px-2 py-0.5 rounded-full bg-cyan-950 text-cyber-neon border border-cyan-800 tracking-normal font-mono font-normal">RL AGENT v2.4</span>
+          </h1>
+          <p class="text-xs text-slate-400 font-mono hidden sm:block">Tabular Q-Learning Discretized Markov Decision Process</p>
+        </div>
+      </div>
+
+      <!-- Quick Status Badges & Audio Toggle -->
+      <div class="flex items-center gap-3">
+        <button id="pauseGameBtn" class="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-cyber-border/60 hover:bg-cyber-border text-slate-200 border border-slate-700 text-xs font-mono transition-all">
+          <i data-lucide="play" class="w-3.5 h-3.5 text-cyan-400"></i>
+          <span id="pauseBtnLabel">Menu / Pause</span>
+        </button>
+        <button id="soundToggleBtn" class="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-cyber-border/40 hover:bg-cyber-border text-slate-300 hover:text-white border border-slate-700/50 text-xs font-mono transition-all">
+          <i data-lucide="volume-2" id="soundIcon" class="w-4 h-4 text-emerald-400"></i>
+          <span id="soundText" class="hidden sm:inline">AUDIO ON</span>
+        </button>
+        <div class="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-cyber-bg border border-cyber-border text-xs font-mono">
+          <span id="gameStatusIndicator" class="w-2 h-2 rounded-full bg-slate-500"></span>
+          <span id="agentStatusBadge" class="text-slate-300">STATUS: READY</span>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <!-- Main Content Layout (3 Columns: Left = Q-Table & Rewards, Center = Game Canvas, Right = Controls & Hyperparameters) -->
+  <main class="max-w-[1440px] mx-auto px-4 py-6 grid grid-cols-1 lg:grid-cols-12 gap-5">
+
+    <!-- Left Column: Q-Learning Table & Reward Breakdown (3.5 Cols) -->
+    <div class="lg:col-span-4 flex flex-col gap-4 order-2 lg:order-1">
+      
+      <!-- Live Discretized Q-Table Matrix -->
+      <div class="bg-cyber-surface border border-cyber-border rounded-2xl p-4 shadow-lg flex flex-col">
+        <div class="flex items-center justify-between mb-2">
+          <div class="flex items-center gap-2">
+            <i data-lucide="table" class="w-4 h-4 text-cyan-400"></i>
+            <h3 class="font-arcade text-sm font-semibold tracking-wider text-slate-200">Q-LEARNING TABLE</h3>
+          </div>
+          <span id="activeStatePill" class="text-[10px] font-mono text-cyan-400 bg-cyan-950/70 border border-cyan-800/60 px-2 py-0.5 rounded">
+            STATUS: STANDBY
+          </span>
+        </div>
+        <p class="text-[11px] font-mono text-slate-400 mb-2">Live state values $Q(s, a)$ for recent discretized buckets:</p>
+
+        <!-- Table Header -->
+        <div class="grid grid-cols-5 text-[10px] font-mono text-slate-400 font-bold border-b border-cyber-border/80 pb-1.5 mb-1 px-1 text-center bg-cyber-bg/40 rounded">
+          <span>ΔY GAP</span>
+          <span>VEL</span>
+          <span>Q(WAIT)</span>
+          <span>Q(FLAP)</span>
+          <span>POLICY</span>
+        </div>
+        <!-- Table Scroll Container -->
+        <div id="qTablePreviewBody" class="font-mono text-xs space-y-1 max-h-48 overflow-y-auto pr-1">
+          <div class="text-slate-500 text-center py-4 text-xs font-mono">Q-Table empty. Start game to discover states!</div>
+        </div>
+      </div>
+
+      <!-- Reward Breakdown & Distribution Doughnut Chart -->
+      <div class="bg-cyber-surface border border-cyber-border rounded-2xl p-4 shadow-lg flex flex-col">
+        <div class="flex items-center justify-between mb-3">
+          <div class="flex items-center gap-2">
+            <i data-lucide="pie-chart" class="w-4 h-4 text-emerald-400"></i>
+            <h3 class="font-arcade text-sm font-semibold tracking-wider text-slate-200">REWARD ACCUMULATION</h3>
+          </div>
+          <span class="text-[10px] font-mono text-slate-400 bg-cyber-bg px-2 py-0.5 rounded border border-cyber-border">
+            By Reward Event
+          </span>
+        </div>
+
+        <!-- Metric Badges -->
+        <div class="grid grid-cols-3 gap-2 font-mono text-center text-xs mb-3">
+          <div class="bg-cyber-bg/70 border border-slate-800 p-2 rounded-xl">
+            <span class="text-[10px] text-emerald-400 block">+1 Tick</span>
+            <span id="rewardSurviveCounter" class="text-sm font-bold text-slate-200">0</span>
+          </div>
+          <div class="bg-cyber-bg/70 border border-slate-800 p-2 rounded-xl">
+            <span class="text-[10px] text-cyan-400 block">+15 Pipe</span>
+            <span id="rewardPipeCounter" class="text-sm font-bold text-slate-200">0</span>
+          </div>
+          <div class="bg-cyber-bg/70 border border-slate-800 p-2 rounded-xl">
+            <span class="text-[10px] text-rose-400 block">-1000 Crash</span>
+            <span id="rewardCrashCounter" class="text-sm font-bold text-slate-200">0</span>
+          </div>
+        </div>
+
+        <!-- Doughnut Canvas -->
+        <div class="relative w-full h-44 bg-cyber-bg/40 rounded-xl p-2 border border-cyber-border flex items-center justify-center">
+          <canvas id="rewardChart"></canvas>
+        </div>
+      </div>
+
+      <!-- Performance Learning Curve -->
+      <div class="bg-cyber-surface border border-cyber-border rounded-2xl p-4 shadow-lg flex flex-col">
+        <div class="flex items-center justify-between mb-3">
+          <div class="flex items-center gap-2">
+            <i data-lucide="line-chart" class="w-4 h-4 text-cyan-400"></i>
+            <h3 class="font-arcade text-sm font-semibold tracking-wider text-slate-200">SCORE PROGRESSION</h3>
+          </div>
+          <span class="text-[10px] font-mono text-slate-400 bg-cyber-bg px-2 py-0.5 rounded border border-cyber-border">
+            Score vs. Episodes
+          </span>
+        </div>
+        <div class="relative w-full h-36 bg-cyber-bg/40 rounded-xl p-2 border border-cyber-border">
+          <canvas id="learningChart"></canvas>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- Center Column: Game Canvas & Overlays (5 Cols) -->
+    <div class="lg:col-span-5 flex flex-col gap-4 order-1 lg:order-2">
+      
+      <!-- Arcade Game Frame -->
+      <div class="relative bg-cyber-surface border border-cyber-border rounded-2xl overflow-hidden shadow-2xl neon-box-cyan flex flex-col items-center">
+        <!-- Top Arcade Bar -->
+        <div class="w-full bg-cyber-bg/90 border-b border-cyber-border px-4 py-2.5 flex items-center justify-between text-xs font-mono">
+          <div class="flex items-center gap-4">
+            <span class="flex items-center gap-1.5 text-slate-400">
+              MODE:
+              <strong id="headerModeLabel" class="text-cyber-neon font-bold">AI TRAINING</strong>
+            </span>
+            <span class="hidden sm:flex items-center gap-1.5 text-slate-400">
+              FPS: <span id="fpsCounter" class="text-emerald-400 font-bold">60</span>
+            </span>
+          </div>
+          <div class="flex items-center gap-2">
+            <span class="text-slate-400">HIGH SCORE:</span>
+            <span id="canvasHighScore" class="text-amber-400 font-arcade text-base font-bold">0</span>
+          </div>
+        </div>
+
+        <!-- Canvas Container -->
+        <div class="relative w-full aspect-[4/5] sm:aspect-[4/4.8] max-h-[580px] bg-[#0c1220] flex justify-center items-center overflow-hidden">
+          <canvas id="gameCanvas" width="400" height="560" class="w-full h-full object-contain cursor-pointer"></canvas>
+          <div class="crt-scanlines absolute inset-0"></div>
+
+          <!-- In-canvas Notification / Flash overlay -->
+          <div id="gameNotification" class="absolute top-6 left-1/2 -translate-x-1/2 pointer-events-none opacity-0 transition-opacity duration-300 px-4 py-1.5 rounded-full bg-black/80 border border-cyan-500/50 text-cyan-300 text-xs font-mono font-semibold shadow-lg">
+            Model Loaded Successfully
+          </div>
+
+          <!-- Arcade Menu Modal Overlay (Start Game, Resume Game, Quit Game) -->
+          <div id="arcadeMenuModal" class="absolute inset-0 bg-black/85 backdrop-blur-md flex flex-col items-center justify-center p-6 text-center z-20">
+            <div class="w-16 h-16 rounded-2xl bg-cyan-500/10 border border-cyan-500/30 flex items-center justify-center mb-4">
+              <i data-lucide="gamepad-2" class="w-8 h-8 text-cyan-400"></i>
+            </div>
+            <h2 id="menuTitle" class="text-2xl font-bold font-arcade tracking-wider text-white mb-1">
+              CYBER<span class="text-cyber-neon">FLAP</span> RL
+            </h2>
+            <p id="menuSubtitle" class="text-xs text-slate-400 font-mono mb-6 max-w-xs">
+              Tabular Reinforcement Learning Flappy Arcade
+            </p>
+
+            <!-- Mode Selector inside Menu -->
+            <div class="flex items-center gap-1.5 bg-cyber-surface/90 border border-cyber-border p-1.5 rounded-xl mb-5 font-mono text-xs">
+              <span class="text-slate-400 px-2">PILOT:</span>
+              <button id="menuPilotAiBtn" class="px-3 py-1 rounded-lg bg-cyan-500 text-black font-bold">AI Agent</button>
+              <button id="menuPilotHumanBtn" class="px-3 py-1 rounded-lg text-slate-400 hover:text-white">Human</button>
+            </div>
+
+            <!-- Arcade Menu Action Buttons -->
+            <div class="flex flex-col gap-2.5 w-full max-w-[240px]">
+              <button id="menuResumeBtn" class="hidden px-5 py-2.5 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-400 hover:to-teal-500 text-black font-arcade font-bold tracking-wider shadow-lg shadow-emerald-500/20 transition-all active:scale-95 flex items-center justify-center gap-2">
+                <i data-lucide="play" class="w-4 h-4"></i>
+                RESUME GAME
+              </button>
+              <button id="menuStartBtn" class="px-5 py-2.5 rounded-xl bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-black font-arcade font-bold tracking-wider shadow-lg shadow-cyan-500/25 transition-all active:scale-95 flex items-center justify-center gap-2">
+                <i data-lucide="zap" class="w-4 h-4"></i>
+                <span id="menuStartText">START GAME</span>
+              </button>
+              <button id="menuQuitBtn" class="px-5 py-2.5 rounded-xl bg-cyber-surface hover:bg-slate-800 text-rose-400 border border-rose-900/50 hover:border-rose-700 font-arcade font-semibold tracking-wider transition-all flex items-center justify-center gap-2">
+                <i data-lucide="power" class="w-4 h-4"></i>
+                QUIT GAME
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Quick Game Action Controls -->
+        <div class="w-full p-3 bg-cyber-bg/90 border-t border-cyber-border flex flex-wrap items-center justify-between gap-3 text-xs font-mono">
+          <!-- Play Mode Indicator -->
+          <div class="flex items-center gap-2 text-slate-400">
+            <span class="w-2 h-2 rounded-full bg-cyan-400"></span>
+            <span>SPACE / TAP TO JUMP</span>
+          </div>
+
+          <!-- Simulation Speed Selector with 0.75x -->
+          <div class="flex items-center gap-1">
+            <span class="text-slate-500 mr-1 hidden sm:inline">SPEED:</span>
+            <div class="flex bg-cyber-surface p-1 rounded-xl border border-cyber-border">
+              <button class="speed-btn px-2 py-1 rounded-lg text-slate-300 hover:text-white transition-all font-mono" data-speed="0.75" title="Slow-motion Precision">0.75x</button>
+              <button class="speed-btn px-2 py-1 rounded-lg text-slate-300 hover:text-white hover:bg-slate-800 transition-all font-mono font-bold bg-cyan-950 text-cyan-400 border border-cyan-800" data-speed="1">1x</button>
+              <button class="speed-btn px-2 py-1 rounded-lg text-slate-300 hover:text-white hover:bg-slate-800 transition-all font-mono" data-speed="2">2x</button>
+              <button class="speed-btn px-2 py-1 rounded-lg text-slate-300 hover:text-white hover:bg-slate-800 transition-all font-mono" data-speed="5">5x</button>
+              <button class="speed-btn px-2 py-1 rounded-lg text-slate-300 hover:text-white hover:bg-slate-800 transition-all font-mono" data-speed="turbo" title="Headless Fast Training">TURBO</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Real-time Agent Decision & Sensory Readout -->
+      <div class="bg-cyber-surface border border-cyber-border rounded-2xl p-4 shadow-lg">
+        <div class="flex items-center justify-between mb-3">
+          <div class="flex items-center gap-2">
+            <i data-lucide="radar" class="w-4 h-4 text-cyber-neon"></i>
+            <h3 class="font-arcade text-sm font-semibold tracking-wider text-slate-200">SENSORS & LIVE DECISION</h3>
+          </div>
+          <span id="policyVerdict" class="text-[11px] font-mono text-cyan-400 bg-cyan-950/80 px-2 py-0.5 rounded border border-cyan-800">
+            ACTION: WAIT
+          </span>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+          <!-- State Discretization Vector -->
+          <div class="bg-cyber-bg/80 border border-cyber-border rounded-xl p-3 flex flex-col justify-between">
+            <span class="text-[11px] font-mono text-slate-400 mb-2 flex items-center justify-between">
+              <span>STATE VECTOR</span>
+              <span id="stateIndexHash" class="text-slate-500 font-mono text-[10px]">HASH: 0</span>
+            </span>
+            <div class="grid grid-cols-3 gap-2 text-center font-mono">
+              <div class="bg-slate-900/90 rounded-lg p-1.5 border border-slate-800">
+                <span class="text-[9px] text-slate-500 block">ΔX PIPE</span>
+                <span id="stateDistX" class="text-xs font-bold text-cyan-300">120 px</span>
+              </div>
+              <div class="bg-slate-900/90 rounded-lg p-1.5 border border-slate-800">
+                <span class="text-[9px] text-slate-500 block">ΔY GAP</span>
+                <span id="stateDistY" class="text-xs font-bold text-amber-300">0 px</span>
+              </div>
+              <div class="bg-slate-900/90 rounded-lg p-1.5 border border-slate-800">
+                <span class="text-[9px] text-slate-500 block">VELOCITY</span>
+                <span id="stateVel" class="text-xs font-bold text-emerald-300">0.0</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Q-Values Probability Meter -->
+          <div class="bg-cyber-bg/80 border border-cyber-border rounded-xl p-3 flex flex-col justify-between">
+            <span class="text-[11px] font-mono text-slate-400 mb-2 flex items-center justify-between">
+              <span>Q-VALUES: Q(s, a)</span>
+              <span class="text-[10px] text-slate-500">ArgMax Policy</span>
+            </span>
+            <div class="space-y-1.5 font-mono text-xs">
+              <div>
+                <div class="flex justify-between text-[10px] mb-0.5">
+                  <span class="text-slate-300">Q(Wait)</span>
+                  <span id="qWaitValue" class="text-slate-400 font-bold">0.00</span>
+                </div>
+                <div class="w-full bg-slate-800 rounded-full h-1.5 overflow-hidden">
+                  <div id="qWaitBar" class="bg-slate-400 h-full transition-all duration-75" style="width: 50%"></div>
+                </div>
+              </div>
+              <div>
+                <div class="flex justify-between text-[10px] mb-0.5">
+                  <span class="text-cyber-neon">Q(Jump)</span>
+                  <span id="qJumpValue" class="text-cyan-400 font-bold">0.00</span>
+                </div>
+                <div class="w-full bg-slate-800 rounded-full h-1.5 overflow-hidden">
+                  <div id="qJumpBar" class="bg-cyan-400 h-full transition-all duration-75" style="width: 50%"></div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- Right Column: Dashboard Stats, Hyperparameters & Weights (3.5 Cols) -->
+    <div class="lg:col-span-3 flex flex-col gap-4 order-3">
+      
+      <!-- Statistics Badges Grid -->
+      <div class="grid grid-cols-2 gap-2.5">
+        <div class="bg-cyber-surface border border-cyber-border rounded-xl p-3 flex flex-col justify-between">
+          <div class="flex items-center justify-between text-slate-400">
+            <span class="text-[10px] font-mono">EPISODE</span>
+            <i data-lucide="refresh-cw" class="w-3.5 h-3.5 text-cyan-400"></i>
+          </div>
+          <div id="metricEpisode" class="text-xl font-bold font-arcade text-white mt-1">0</div>
+          <div class="text-[9px] text-slate-500 font-mono">Runs</div>
+        </div>
+
+        <div class="bg-cyber-surface border border-cyber-border rounded-xl p-3 flex flex-col justify-between">
+          <div class="flex items-center justify-between text-slate-400">
+            <span class="text-[10px] font-mono">SCORE</span>
+            <i data-lucide="award" class="w-3.5 h-3.5 text-emerald-400"></i>
+          </div>
+          <div id="metricScore" class="text-xl font-bold font-arcade text-emerald-400 mt-1">0</div>
+          <div class="text-[9px] text-slate-500 font-mono">Current</div>
+        </div>
+
+        <div class="bg-cyber-surface border border-cyber-border rounded-xl p-3 flex flex-col justify-between">
+          <div class="flex items-center justify-between text-slate-400">
+            <span class="text-[10px] font-mono">AVG (25)</span>
+            <i data-lucide="trending-up" class="w-3.5 h-3.5 text-amber-400"></i>
+          </div>
+          <div id="metricAvgScore" class="text-xl font-bold font-arcade text-amber-400 mt-1">0.0</div>
+          <div class="text-[9px] text-slate-500 font-mono">Moving Avg</div>
+        </div>
+
+        <div class="bg-cyber-surface border border-cyber-border rounded-xl p-3 flex flex-col justify-between">
+          <div class="flex items-center justify-between text-slate-400">
+            <span class="text-[10px] font-mono">EPSILON</span>
+            <i data-lucide="zap" class="w-3.5 h-3.5 text-purple-400"></i>
+          </div>
+          <div id="metricEpsilon" class="text-xl font-bold font-arcade text-purple-400 mt-1">0.05</div>
+          <div class="text-[9px] text-slate-500 font-mono">Exploration</div>
+        </div>
+      </div>
+
+      <!-- Hyperparameters Tuning Card -->
+      <div class="bg-cyber-surface border border-cyber-border rounded-2xl p-4 shadow-lg">
+        <div class="flex items-center justify-between mb-3">
+          <div class="flex items-center gap-2">
+            <i data-lucide="sliders" class="w-4 h-4 text-purple-400"></i>
+            <h3 class="font-arcade text-sm font-semibold tracking-wider text-slate-200">HYPERPARAMETERS</h3>
+          </div>
+          <span class="text-[10px] font-mono text-slate-500">Live</span>
+        </div>
+
+        <div class="space-y-3 text-xs font-mono">
+          <!-- Learning Rate Alpha -->
+          <div>
+            <div class="flex justify-between mb-1">
+              <span class="text-slate-300">Alpha (α):</span>
+              <span id="valAlpha" class="text-cyber-neon font-bold">0.70</span>
+            </div>
+            <input type="range" id="inputAlpha" min="0.05" max="1.0" step="0.05" value="0.70" 
+              class="w-full accent-cyan-400 bg-slate-800 h-1.5 rounded-lg appearance-none cursor-pointer">
+          </div>
+
+          <!-- Discount Factor Gamma -->
+          <div>
+            <div class="flex justify-between mb-1">
+              <span class="text-slate-300">Gamma (γ):</span>
+              <span id="valGamma" class="text-emerald-400 font-bold">0.95</span>
+            </div>
+            <input type="range" id="inputGamma" min="0.5" max="0.99" step="0.01" value="0.95" 
+              class="w-full accent-emerald-400 bg-slate-800 h-1.5 rounded-lg appearance-none cursor-pointer">
+          </div>
+
+          <!-- Epsilon (Exploration Rate) -->
+          <div>
+            <div class="flex justify-between mb-1">
+              <span class="text-slate-300">Epsilon (ε):</span>
+              <span id="valEpsilon" class="text-purple-400 font-bold">0.05</span>
+            </div>
+            <input type="range" id="inputEpsilon" min="0.0" max="1.0" step="0.01" value="0.05" 
+              class="w-full accent-purple-400 bg-slate-800 h-1.5 rounded-lg appearance-none cursor-pointer">
+          </div>
+
+          <!-- Sensor Visualizer Toggle -->
+          <div class="pt-2 border-t border-cyber-border flex items-center justify-between">
+            <span class="text-slate-400">Visual Rays:</span>
+            <label class="relative inline-flex items-center cursor-pointer">
+              <input type="checkbox" id="toggleSensoryRays" checked class="sr-only peer">
+              <div class="w-9 h-5 bg-slate-800 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-cyan-500"></div>
+            </label>
+          </div>
+        </div>
+      </div>
+
+      <!-- Weights & Knowledge Storage Card -->
+      <div class="bg-cyber-surface border border-cyber-border rounded-2xl p-4 shadow-lg">
+        <div class="flex items-center justify-between mb-3">
+          <div class="flex items-center gap-2">
+            <i data-lucide="database" class="w-4 h-4 text-amber-400"></i>
+            <h3 class="font-arcade text-sm font-semibold tracking-wider text-slate-200">WEIGHTS & STORAGE</h3>
+          </div>
+          <span id="statesCountBadge" class="text-[10px] font-mono text-slate-400 bg-cyber-bg px-2 py-0.5 rounded border border-cyber-border">
+            0 STATES
+          </span>
+        </div>
+
+        <div class="grid grid-cols-1 gap-2">
+          <button id="loadSmartModelBtn" class="flex items-center justify-center gap-2 px-3 py-2 rounded-xl bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-300 border border-emerald-500/40 text-xs font-mono font-semibold transition-all">
+            <i data-lucide="sparkles" class="w-4 h-4"></i>
+            Load Pre-trained Pro Model
+          </button>
+          <button id="resetModelBtn" class="flex items-center justify-center gap-2 px-3 py-2 rounded-xl bg-red-950/20 hover:bg-red-950/40 text-red-400 border border-red-800/40 text-xs font-mono transition-all">
+            <i data-lucide="trash-2" class="w-4 h-4"></i>
+            Reset to Scratch
+          </button>
+          <div class="grid grid-cols-2 gap-2 mt-1">
+            <button id="exportModelBtn" class="flex items-center justify-center gap-1.5 px-2.5 py-2 rounded-xl bg-cyber-bg hover:bg-cyber-border text-slate-300 border border-cyber-border text-[11px] font-mono transition-all">
+              <i data-lucide="download" class="w-3.5 h-3.5"></i>
+              Export JSON
+            </button>
+            <label class="flex items-center justify-center gap-1.5 px-2.5 py-2 rounded-xl bg-cyber-bg hover:bg-cyber-border text-slate-300 border border-cyber-border text-[11px] font-mono cursor-pointer transition-all">
+              <i data-lucide="upload" class="w-3.5 h-3.5"></i>
+              Import JSON
+              <input type="file" id="importModelInput" accept=".json" class="hidden">
+            </label>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </main>
+
+  <!-- Interactive Instruction Footer -->
+  <footer class="max-w-7xl mx-auto px-4 py-8 border-t border-cyber-border mt-6 text-xs font-mono text-slate-400">
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+      <div>
+        <h4 class="font-arcade text-white text-sm mb-2 flex items-center gap-1.5">
+          <i data-lucide="info" class="w-4 h-4 text-cyan-400"></i>
+          REINFORCEMENT LEARNING CORE
+        </h4>
+        <p class="leading-relaxed">
+          The agent discretizes the continuous game state into bucketed tuples: <code class="text-cyan-300">[Δx_pipe, Δy_gap, velocity]</code>. Using the Bellman Q-Update:
+          <code class="text-amber-300 block my-1">Q(s,a) ← Q(s,a) + α [r + γ max Q(s',a') - Q(s,a)]</code>
+          The bird discovers through exploration that flapping too high or dropping too fast results in a severe crash penalty.
+        </p>
+      </div>
+      <div>
+        <h4 class="font-arcade text-white text-sm mb-2 flex items-center gap-1.5">
+          <i data-lucide="terminal" class="w-4 h-4 text-emerald-400"></i>
+          CONTROLS & SHORTCUTS
+        </h4>
+        <ul class="space-y-1 list-disc list-inside">
+          <li><strong class="text-slate-200">Spacebar / Click:</strong> Jump in Human Mode.</li>
+          <li><strong class="text-slate-200">P / Escape:</strong> Open Menu / Pause the simulation.</li>
+          <li><strong class="text-slate-200">0.75x Speed:</strong> Slow-motion view for precision agent debugging.</li>
+          <li><strong class="text-slate-200">Load Pre-trained Pro:</strong> Instantly test an optimal Q-policy scoring 100+.</li>
+        </ul>
+      </div>
+      <div>
+        <h4 class="font-arcade text-white text-sm mb-2 flex items-center gap-1.5">
+          <i data-lucide="cpu" class="w-4 h-4 text-purple-400"></i>
+          REWARD STRUCTURE
+        </h4>
+        <ul class="space-y-1 list-disc list-inside">
+          <li><strong class="text-emerald-400">+1 per tick:</strong> Survival incentive to stay airborne.</li>
+          <li><strong class="text-cyan-400">+15 per pipe:</strong> Passed clearance bonus for gate navigation.</li>
+          <li><strong class="text-rose-400">-1000 on crash:</strong> Immediate terminal penalty upon ground, ceiling or pipe contact.</li>
+        </ul>
+      </div>
+    </div>
+  </footer>
+
+  <!-- Sound FX Engine via Web Audio API -->
+  <script>
+    class SoundFX {
+      constructor() {
+        this.ctx = null;
+        this.enabled = true;
+      }
+
+      init() {
+        if (!this.ctx) {
+          const AudioContext = window.AudioContext || window.webkitAudioContext;
+          if (AudioContext) {
+            this.ctx = new AudioContext();
+          }
+        }
+        if (this.ctx && this.ctx.state === 'suspended') {
+          this.ctx.resume();
+        }
+      }
+
+      playJump() {
+        if (!this.enabled) return;
+        this.init();
+        if (!this.ctx) return;
+        try {
+          const osc = this.ctx.createOscillator();
+          const gain = this.ctx.createGain();
+          osc.type = 'sine';
+          osc.frequency.setValueAtTime(320, this.ctx.currentTime);
+          osc.frequency.exponentialRampToValueAtTime(700, this.ctx.currentTime + 0.12);
+          gain.gain.setValueAtTime(0.12, this.ctx.currentTime);
+          gain.gain.exponentialRampToValueAtTime(0.001, this.ctx.currentTime + 0.12);
+          osc.connect(gain);
+          gain.connect(this.ctx.destination);
+          osc.start();
+          osc.stop(this.ctx.currentTime + 0.12);
+        } catch (e) {}
+      }
+
+      playScore() {
+        if (!this.enabled) return;
+        this.init();
+        if (!this.ctx) return;
+        try {
+          const osc = this.ctx.createOscillator();
+          const gain = this.ctx.createGain();
+          osc.type = 'triangle';
+          osc.frequency.setValueAtTime(587.33, this.ctx.currentTime);
+          osc.frequency.setValueAtTime(880, this.ctx.currentTime + 0.08);
+          gain.gain.setValueAtTime(0.15, this.ctx.currentTime);
+          gain.gain.exponentialRampToValueAtTime(0.001, this.ctx.currentTime + 0.25);
+          osc.connect(gain);
+          gain.connect(this.ctx.destination);
+          osc.start();
+          osc.stop(this.ctx.currentTime + 0.25);
+        } catch (e) {}
+      }
+
+      playCrash() {
+        if (!this.enabled) return;
+        this.init();
+        if (!this.ctx) return;
+        try {
+          const osc = this.ctx.createOscillator();
+          const gain = this.ctx.createGain();
+          osc.type = 'sawtooth';
+          osc.frequency.setValueAtTime(140, this.ctx.currentTime);
+          osc.frequency.exponentialRampToValueAtTime(35, this.ctx.currentTime + 0.25);
+          gain.gain.setValueAtTime(0.2, this.ctx.currentTime);
+          gain.gain.exponentialRampToValueAtTime(0.001, this.ctx.currentTime + 0.25);
+          osc.connect(gain);
+          gain.connect(this.ctx.destination);
+          osc.start();
+          osc.stop(this.ctx.currentTime + 0.25);
+        } catch (e) {}
+      }
+    }
+  </script>
+
+  <!-- Main Game Simulation & Tabular Q-Learning Implementation -->
+  <script>
+    // Initialize Lucide icons
+    lucide.createIcons();
+
+    const CANVAS_WIDTH = 400;
+    const CANVAS_HEIGHT = 560;
+    const GRAVITY = 0.42;
+    const JUMP_IMPULSE = -6.8;
+    const PIPE_SPEED = 2.8;
+    const PIPE_SPAWN_INTERVAL = 115;
+    const PIPE_GAP = 125;
+    const PIPE_WIDTH = 56;
+    const BIRD_RADIUS = 13;
+
+    const DISCRETIZATION = {
+      xBucket: 14,
+      yBucket: 10,
+      vBucket: 2
+    };
+
+    class QLearningAgent {
+      constructor() {
+        this.qTable = {};
+        this.alpha = 0.70;
+        this.gamma = 0.95;
+        this.epsilon = 0.05;
+        this.epsilonDecay = 0.9995;
+        this.minEpsilon = 0.001;
+        this.actions = [0, 1];
+      }
+
+      getStateKey(bird, nextPipe) {
+        if (!nextPipe) return "no_pipe";
+        const rawDx = (nextPipe.x + PIPE_WIDTH) - bird.x;
+        const gapCenterY = nextPipe.topHeight + (PIPE_GAP / 2);
+        const rawDy = gapCenterY - bird.y;
+        const rawVel = bird.velocity;
+
+        const bucketX = Math.floor(rawDx / DISCRETIZATION.xBucket);
+        const bucketY = Math.floor(rawDy / DISCRETIZATION.yBucket);
+        const bucketV = Math.floor(rawVel / DISCRETIZATION.vBucket);
+
+        return `${bucketX}_${bucketY}_${bucketV}`;
+      }
+
+      getQValues(stateKey) {
+        if (!this.qTable[stateKey]) {
+          this.qTable[stateKey] = [0.0, 0.0];
+        }
+        return this.qTable[stateKey];
+      }
+
+      selectAction(stateKey, forceGreedy = false) {
+        const qValues = this.getQValues(stateKey);
+        const effectiveEpsilon = forceGreedy ? 0 : this.epsilon;
+
+        if (Math.random() < effectiveEpsilon) {
+          return Math.random() < 0.5 ? 0 : 1;
+        } else {
+          if (qValues[1] > qValues[0]) return 1;
+          if (qValues[0] > qValues[1]) return 0;
+          return 0;
+        }
+      }
+
+      update(stateKey, action, reward, nextStateKey, isDone) {
+        const currentQ = this.getQValues(stateKey);
+        const currentVal = currentQ[action];
+
+        let target = reward;
+        if (!isDone) {
+          const nextQ = this.getQValues(nextStateKey);
+          const maxNextQ = Math.max(nextQ[0], nextQ[1]);
+          target = reward + this.gamma * maxNextQ;
+        }
+
+        currentQ[action] = currentVal + this.alpha * (target - currentVal);
+        if (currentQ[action] > 10000) currentQ[action] = 10000;
+        if (currentQ[action] < -10000) currentQ[action] = -10000;
+      }
+
+      decayEpsilon() {
+        if (this.epsilon > this.minEpsilon) {
+          this.epsilon *= this.epsilonDecay;
+        }
+      }
+
+      getDiscoveredStatesCount() {
+        return Object.keys(this.qTable).length;
+      }
+
+      reset() {
+        this.qTable = {};
+      }
+    }
+
+    function generateSmartQWeights() {
+      const weights = {};
+      for (let bx = -4; bx <= 30; bx++) {
+        for (let by = -30; by <= 30; by++) {
+          for (let bv = -7; bv <= 7; bv++) {
+            const key = `${bx}_${by}_${bv}`;
+            const dy = by * DISCRETIZATION.yBucket;
+            const vel = bv * DISCRETIZATION.vBucket;
+
+            let jumpBonus = 0;
+            let waitBonus = 0;
+            const targetY = -4;
+
+            if (dy < targetY) {
+              jumpBonus += 150 + Math.abs(dy) * 3;
+            } else if (dy > 18) {
+              waitBonus += 180 + Math.abs(dy) * 2;
+            } else {
+              if (vel > 1.8) {
+                jumpBonus += 85;
+              } else {
+                waitBonus += 90;
+              }
+            }
+
+            weights[key] = [
+              parseFloat(waitBonus.toFixed(2)),
+              parseFloat(jumpBonus.toFixed(2))
+            ];
+          }
+        }
+      }
+      return weights;
+    }
+
+    class FlappyGame {
+      constructor(canvas, sound) {
+        this.canvas = canvas;
+        this.ctx = canvas.getContext('2d');
+        this.sound = sound;
+
+        this.bird = {
+          x: 75,
+          y: CANVAS_HEIGHT / 2,
+          velocity: 0,
+          radius: BIRD_RADIUS
+        };
+
+        this.pipes = [];
+        this.score = 0;
+        this.highScore = 0;
+        this.frameCount = 0;
+        this.isGameOver = false;
+
+        this.stars = Array.from({ length: 45 }, () => ({
+          x: Math.random() * CANVAS_WIDTH,
+          y: Math.random() * CANVAS_HEIGHT * 0.7,
+          size: Math.random() * 2 + 0.5,
+          alpha: Math.random() * 0.7 + 0.3,
+          speed: Math.random() * 0.4 + 0.1
+        }));
+
+        this.cityline = Array.from({ length: 18 }, (_, i) => ({
+          x: i * 28,
+          w: 24,
+          h: 40 + Math.sin(i * 1.5) * 25 + (i % 3) * 20
+        }));
+
+        this.reset();
+      }
+
+      reset() {
+        this.bird.x = 75;
+        this.bird.y = CANVAS_HEIGHT / 2 - 20;
+        this.bird.velocity = 0;
+        this.pipes = [];
+        this.score = 0;
+        this.frameCount = 0;
+        this.isGameOver = false;
+        this.spawnPipe(CANVAS_WIDTH + 60);
+      }
+
+      spawnPipe(spawnX) {
+        const minTop = 60;
+        const maxTop = CANVAS_HEIGHT - PIPE_GAP - 120;
+        const topHeight = Math.floor(Math.random() * (maxTop - minTop + 1)) + minTop;
+        this.pipes.push({
+          x: spawnX !== undefined ? spawnX : CANVAS_WIDTH + 20,
+          topHeight: topHeight,
+          bottomY: topHeight + PIPE_GAP,
+          passed: false
+        });
+      }
+
+      jump() {
+        if (this.isGameOver) return;
+        this.bird.velocity = JUMP_IMPULSE;
+        this.sound.playJump();
+      }
+
+      getNextPipe() {
+        for (let i = 0; i < this.pipes.length; i++) {
+          if (this.pipes[i].x + PIPE_WIDTH > this.bird.x - this.bird.radius) {
+            return this.pipes[i];
+          }
+        }
+        return null;
+      }
+
+      step(action) {
+        if (this.isGameOver) return { reward: 0, done: true, passedPipe: false, rewardType: 'none' };
+
+        this.frameCount++;
+
+        if (action === 1) {
+          this.bird.velocity = JUMP_IMPULSE;
+        }
+
+        this.bird.velocity += GRAVITY;
+        this.bird.y += this.bird.velocity;
+
+        let reward = 1.0;
+        let rewardType = 'survive';
+        let passedPipe = false;
+
+        for (let star of this.stars) {
+          star.x -= star.speed;
+          if (star.x < 0) star.x = CANVAS_WIDTH;
+        }
+
+        for (let i = this.pipes.length - 1; i >= 0; i--) {
+          const pipe = this.pipes[i];
+          pipe.x -= PIPE_SPEED;
+
+          if (!pipe.passed && pipe.x + PIPE_WIDTH < this.bird.x) {
+            pipe.passed = true;
+            this.score++;
+            if (this.score > this.highScore) {
+              this.highScore = this.score;
+            }
+            reward += 15.0;
+            rewardType = 'pipe';
+            passedPipe = true;
+            this.sound.playScore();
+          }
+
+          if (pipe.x + PIPE_WIDTH < -20) {
+            this.pipes.splice(i, 1);
+          }
+        }
+
+        if (this.frameCount % PIPE_SPAWN_INTERVAL === 0) {
+          this.spawnPipe();
+        }
+
+        if (this.bird.y - this.bird.radius <= 0 || this.bird.y + this.bird.radius >= CANVAS_HEIGHT - 35) {
+          this.isGameOver = true;
+          reward = -1000.0;
+          rewardType = 'crash';
+        }
+
+        const bx = this.bird.x;
+        const by = this.bird.y;
+        const br = this.bird.radius - 2;
+
+        for (let pipe of this.pipes) {
+          if (bx + br > pipe.x && bx - br < pipe.x + PIPE_WIDTH) {
+            if (by - br < pipe.topHeight || by + br > pipe.bottomY) {
+              this.isGameOver = true;
+              reward = -1000.0;
+              rewardType = 'crash';
+              break;
+            }
+          }
+        }
+
+        if (this.isGameOver) {
+          this.sound.playCrash();
+        }
+
+        return { reward, done: this.isGameOver, passedPipe, rewardType };
+      }
+
+      render(showTrajectory = true, agentAction = 0) {
+        const ctx = this.ctx;
+
+        const skyGrad = ctx.createLinearGradient(0, 0, 0, CANVAS_HEIGHT);
+        skyGrad.addColorStop(0, '#0a0d18');
+        skyGrad.addColorStop(0.7, '#111728');
+        skyGrad.addColorStop(1, '#1b233a');
+        ctx.fillStyle = skyGrad;
+        ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+
+        for (let star of this.stars) {
+          ctx.fillStyle = `rgba(0, 243, 255, ${star.alpha})`;
+          ctx.beginPath();
+          ctx.arc(star.x, star.y, star.size, 0, Math.PI * 2);
+          ctx.fill();
+        }
+
+        ctx.fillStyle = 'rgba(15, 23, 42, 0.7)';
+        for (let b of this.cityline) {
+          ctx.fillRect(b.x, CANVAS_HEIGHT - 35 - b.h, b.w, b.h);
+          ctx.fillStyle = 'rgba(0, 243, 255, 0.2)';
+          ctx.fillRect(b.x + 4, CANVAS_HEIGHT - 35 - b.h + 6, 4, 4);
+          ctx.fillStyle = 'rgba(15, 23, 42, 0.7)';
+        }
+
+        ctx.fillStyle = '#0f1422';
+        ctx.fillRect(0, CANVAS_HEIGHT - 35, CANVAS_WIDTH, 35);
+        ctx.strokeStyle = '#00f3ff';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(0, CANVAS_HEIGHT - 35);
+        ctx.lineTo(CANVAS_WIDTH, CANVAS_HEIGHT - 35);
+        ctx.stroke();
+
+        ctx.strokeStyle = 'rgba(0, 243, 255, 0.2)';
+        ctx.lineWidth = 1;
+        for (let x = 0; x < CANVAS_WIDTH; x += 25) {
+          ctx.beginPath();
+          ctx.moveTo(x, CANVAS_HEIGHT - 35);
+          ctx.lineTo(x - 15, CANVAS_HEIGHT);
+          ctx.stroke();
+        }
+
+        const nextPipe = this.getNextPipe();
+
+        if (showTrajectory && nextPipe) {
+          const gapCenterY = nextPipe.topHeight + (PIPE_GAP / 2);
+          ctx.save();
+          ctx.setLineDash([4, 4]);
+          ctx.lineWidth = 1.5;
+          ctx.strokeStyle = agentAction === 1 ? 'rgba(0, 255, 102, 0.6)' : 'rgba(0, 243, 255, 0.4)';
+          ctx.beginPath();
+          ctx.moveTo(this.bird.x, this.bird.y);
+          ctx.lineTo(nextPipe.x, gapCenterY);
+          ctx.stroke();
+
+          ctx.setLineDash([]);
+          ctx.strokeStyle = '#ffb703';
+          ctx.fillStyle = 'rgba(255, 183, 3, 0.15)';
+          ctx.beginPath();
+          ctx.arc(nextPipe.x + (PIPE_WIDTH / 2), gapCenterY, 12, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.stroke();
+          ctx.restore();
+        }
+
+        for (let pipe of this.pipes) {
+          const pipeGrad = ctx.createLinearGradient(pipe.x, 0, pipe.x + PIPE_WIDTH, 0);
+          pipeGrad.addColorStop(0, '#0f3242');
+          pipeGrad.addColorStop(0.5, '#175066');
+          pipeGrad.addColorStop(1, '#0b2430');
+
+          ctx.fillStyle = pipeGrad;
+          ctx.strokeStyle = '#00f3ff';
+          ctx.lineWidth = 2;
+
+          ctx.fillRect(pipe.x, 0, PIPE_WIDTH, pipe.topHeight);
+          ctx.strokeRect(pipe.x, 0, PIPE_WIDTH, pipe.topHeight);
+
+          ctx.fillStyle = '#1e6884';
+          ctx.fillRect(pipe.x - 3, pipe.topHeight - 14, PIPE_WIDTH + 6, 14);
+          ctx.strokeRect(pipe.x - 3, pipe.topHeight - 14, PIPE_WIDTH + 6, 14);
+
+          const bottomHeight = (CANVAS_HEIGHT - 35) - pipe.bottomY;
+          ctx.fillStyle = pipeGrad;
+          ctx.fillRect(pipe.x, pipe.bottomY, PIPE_WIDTH, bottomHeight);
+          ctx.strokeRect(pipe.x, pipe.bottomY, PIPE_WIDTH, bottomHeight);
+
+          ctx.fillStyle = '#1e6884';
+          ctx.fillRect(pipe.x - 3, pipe.bottomY, PIPE_WIDTH + 6, 14);
+          ctx.strokeRect(pipe.x - 3, pipe.bottomY, PIPE_WIDTH + 6, 14);
+
+          ctx.fillStyle = 'rgba(0, 243, 255, 0.08)';
+          ctx.fillRect(pipe.x, pipe.topHeight, PIPE_WIDTH, PIPE_GAP);
+        }
+
+        ctx.save();
+        ctx.translate(this.bird.x, this.bird.y);
+        const angle = Math.min(Math.PI / 4, Math.max(-Math.PI / 4, this.bird.velocity * 0.08));
+        ctx.rotate(angle);
+
+        if (this.bird.velocity < 0) {
+          ctx.fillStyle = '#ff0055';
+          ctx.beginPath();
+          ctx.moveTo(-this.bird.radius - 3, -3);
+          ctx.lineTo(-this.bird.radius - 12, 0);
+          ctx.lineTo(-this.bird.radius - 3, 3);
+          ctx.fill();
+        }
+
+        ctx.shadowColor = '#00f3ff';
+        ctx.shadowBlur = 12;
+
+        const droneGrad = ctx.createRadialGradient(-3, -3, 2, 0, 0, this.bird.radius);
+        droneGrad.addColorStop(0, '#e0f7fa');
+        droneGrad.addColorStop(0.4, '#00e5ff');
+        droneGrad.addColorStop(1, '#006064');
+        ctx.fillStyle = droneGrad;
+        ctx.beginPath();
+        ctx.arc(0, 0, this.bird.radius, 0, Math.PI * 2);
+        ctx.fill();
+
+        ctx.shadowBlur = 0;
+        ctx.strokeStyle = '#ffffff';
+        ctx.lineWidth = 1.8;
+        ctx.stroke();
+
+        ctx.fillStyle = '#111827';
+        ctx.fillRect(3, -4, 8, 8);
+        ctx.fillStyle = '#00ff66';
+        ctx.fillRect(5, -2, 5, 4);
+
+        ctx.restore();
+
+        ctx.fillStyle = '#ffffff';
+        ctx.font = '700 28px "Chakra Petch", sans-serif';
+        ctx.textAlign = 'center';
+        ctx.shadowColor = 'rgba(0, 243, 255, 0.8)';
+        ctx.shadowBlur = 8;
+        ctx.fillText(this.score, CANVAS_WIDTH / 2, 45);
+        ctx.shadowBlur = 0;
+      }
+    }
+
+    const canvas = document.getElementById('gameCanvas');
+    const sound = new SoundFX();
+    const game = new FlappyGame(canvas, sound);
+    const agent = new QLearningAgent();
+
+    // Game state: 'MENU', 'PLAYING', 'PAUSED'
+    let gameState = 'MENU';
+    let playMode = 'AI';
+    let simSpeed = 1; // 0.75, 1, 2, 5, 20, or 'turbo'
+    let episodeCount = 0;
+    let scoreHistory = [];
+    let showSensoryRays = true;
+    let currentAgentAction = 0;
+    let pendingHumanJump = false;
+
+    // Fractional speed accumulator for 0.75x
+    let speedAccumulator = 0;
+
+    // Reward Statistics Counters
+    const rewardStats = {
+      survive: 0,
+      pipe: 0,
+      crash: 0
+    };
+
+    // DOM Elements
+    const arcadeMenuModal = document.getElementById('arcadeMenuModal');
+    const menuTitle = document.getElementById('menuTitle');
+    const menuSubtitle = document.getElementById('menuSubtitle');
+    const menuStartBtn = document.getElementById('menuStartBtn');
+    const menuResumeBtn = document.getElementById('menuResumeBtn');
+    const menuQuitBtn = document.getElementById('menuQuitBtn');
+    const menuStartText = document.getElementById('menuStartText');
+    const menuPilotAiBtn = document.getElementById('menuPilotAiBtn');
+    const menuPilotHumanBtn = document.getElementById('menuPilotHumanBtn');
+    const pauseGameBtn = document.getElementById('pauseGameBtn');
+    const pauseBtnLabel = document.getElementById('pauseBtnLabel');
+    const gameStatusIndicator = document.getElementById('gameStatusIndicator');
+
+    const metricEpisode = document.getElementById('metricEpisode');
+    const metricScore = document.getElementById('metricScore');
+    const metricAvgScore = document.getElementById('metricAvgScore');
+    const metricEpsilon = document.getElementById('metricEpsilon');
+    const canvasHighScore = document.getElementById('canvasHighScore');
+    const statesCountBadge = document.getElementById('statesCountBadge');
+    const agentStatusBadge = document.getElementById('agentStatusBadge');
+    const headerModeLabel = document.getElementById('headerModeLabel');
+    const fpsCounter = document.getElementById('fpsCounter');
+
+    const stateDistX = document.getElementById('stateDistX');
+    const stateDistY = document.getElementById('stateDistY');
+    const stateVel = document.getElementById('stateVel');
+    const stateIndexHash = document.getElementById('stateIndexHash');
+    const policyVerdict = document.getElementById('policyVerdict');
+    const qWaitValue = document.getElementById('qWaitValue');
+    const qJumpValue = document.getElementById('qJumpValue');
+    const qWaitBar = document.getElementById('qWaitBar');
+    const qJumpBar = document.getElementById('qJumpBar');
+    const activeStatePill = document.getElementById('activeStatePill');
+    const qTablePreviewBody = document.getElementById('qTablePreviewBody');
+
+    const rewardSurviveCounter = document.getElementById('rewardSurviveCounter');
+    const rewardPipeCounter = document.getElementById('rewardPipeCounter');
+    const rewardCrashCounter = document.getElementById('rewardCrashCounter');
+
+    const speedButtons = document.querySelectorAll('.speed-btn');
+    const inputAlpha = document.getElementById('inputAlpha');
+    const valAlpha = document.getElementById('valAlpha');
+    const inputGamma = document.getElementById('inputGamma');
+    const valGamma = document.getElementById('valGamma');
+    const inputEpsilon = document.getElementById('inputEpsilon');
+    const valEpsilon = document.getElementById('valEpsilon');
+    const toggleSensoryRays = document.getElementById('toggleSensoryRays');
+
+    const loadSmartModelBtn = document.getElementById('loadSmartModelBtn');
+    const resetModelBtn = document.getElementById('resetModelBtn');
+    const exportModelBtn = document.getElementById('exportModelBtn');
+    const importModelInput = document.getElementById('importModelInput');
+    const gameNotification = document.getElementById('gameNotification');
+    const soundToggleBtn = document.getElementById('soundToggleBtn');
+    const soundIcon = document.getElementById('soundIcon');
+    const soundText = document.getElementById('soundText');
+
+    const rewardChartCtx = document.getElementById('rewardChart').getContext('2d');
+    const rewardChart = new Chart(rewardChartCtx, {
+      type: 'doughnut',
+      data: {
+        labels: ['Tick Survival (+1)', 'Pipe Gate (+15)', 'Crashes (-1000)'],
+        datasets: [{
+          data: [1, 1, 1],
+          backgroundColor: [
+            'rgba(0, 255, 102, 0.8)',
+            'rgba(0, 243, 255, 0.85)',
+            'rgba(255, 0, 85, 0.85)'
+          ],
+          borderColor: '#111726',
+          borderWidth: 2,
+          hoverOffset: 4
+        }]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: {
+            position: 'bottom',
+            labels: {
+              color: '#94a3b8',
+              font: { family: 'JetBrains Mono', size: 9 },
+              boxWidth: 8
+            }
+          }
+        },
+        cutout: '65%'
+      }
+    });
+
+    // Episode Score Progress Line Chart (Left Side)
+    const learningChartCtx = document.getElementById('learningChart').getContext('2d');
+    const learningChart = new Chart(learningChartCtx, {
+      type: 'line',
+      data: {
+        labels: [],
+        datasets: [
+          {
+            label: 'Score',
+            data: [],
+            borderColor: '#00f3ff',
+            backgroundColor: 'rgba(0, 243, 255, 0.08)',
+            borderWidth: 1.5,
+            fill: true,
+            pointRadius: 1,
+            tension: 0.2
+          },
+          {
+            label: 'Avg (10)',
+            data: [],
+            borderColor: '#ffb703',
+            borderWidth: 1.5,
+            pointRadius: 0,
+            tension: 0.2
+          }
+        ]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        animation: false,
+        scales: {
+          x: {
+            display: false
+          },
+          y: {
+            display: true,
+            beginAtZero: true,
+            grid: { color: 'rgba(255, 255, 255, 0.04)' },
+            ticks: { color: '#64748b', font: { family: 'JetBrains Mono', size: 9 } }
+          }
+        },
+        plugins: {
+          legend: {
+            display: true,
+            labels: { color: '#94a3b8', font: { family: 'JetBrains Mono', size: 9 }, boxWidth: 8 }
+          }
+        }
+      }
+    });
+
+    function showNotification(msg) {
+      gameNotification.innerText = msg;
+      gameNotification.style.opacity = '1';
+      setTimeout(() => {
+        gameNotification.style.opacity = '0';
+      }, 2000);
+    }
+
+    // Populate Left Table Dynamic Rows
+    function refreshQTablePreview() {
+      const keys = Object.keys(agent.qTable);
+      if (keys.length === 0) {
+        qTablePreviewBody.innerHTML = '<div class="text-slate-500 text-center py-4">Q-Table empty. Start game to discover states!</div>';
+        return;
+      }
+
+      // Show recent 6 states
+      const sample = keys.slice(-6).reverse();
+      let html = '';
+      sample.forEach(key => {
+        const parts = key.split('_');
+        const qVals = agent.qTable[key];
+        const wait = qVals ? qVals[0].toFixed(1) : '0';
+        const jump = qVals ? qVals[1].toFixed(1) : '0';
+        const bestAction = qVals && qVals[1] > qVals[0] ? 'FLAP' : 'WAIT';
+        const bestColor = bestAction === 'FLAP' ? 'text-emerald-400' : 'text-slate-300';
+
+        html += `
+          <div class="grid grid-cols-5 text-center py-0.5 border-b border-cyber-border/40 hover:bg-slate-800/50 rounded">
+            <span class="text-amber-400 font-bold">${parts[1] || '0'}</span>
+            <span class="text-slate-300">${parts[2] || '0'}</span>
+            <span class="text-slate-400">${wait}</span>
+            <span class="text-cyan-400">${jump}</span>
+            <span class="${bestColor} font-bold">${bestAction}</span>
+          </div>
+        `;
+      });
+      qTablePreviewBody.innerHTML = html;
+    }
+
+    function openMenu(isPause = false) {
+      gameState = isPause ? 'PAUSED' : 'MENU';
+      arcadeMenuModal.classList.remove('hidden');
+
+      if (isPause) {
+        menuTitle.innerHTML = 'CYBER<span class="text-amber-400">PAUSED</span>';
+        menuSubtitle.innerText = 'Game session is currently halted. Resume or start over.';
+        menuResumeBtn.classList.remove('hidden');
+        menuStartText.innerText = 'RESTART GAME';
+        pauseBtnLabel.innerText = 'Resume';
+        agentStatusBadge.innerText = 'STATUS: PAUSED';
+        gameStatusIndicator.className = 'w-2 h-2 rounded-full bg-amber-400';
+      } else {
+        menuTitle.innerHTML = 'CYBER<span class="text-cyber-neon">FLAP</span> RL';
+        menuSubtitle.innerText = 'Tabular Reinforcement Learning Flappy Arcade';
+        menuResumeBtn.classList.add('hidden');
+        menuStartText.innerText = 'START GAME';
+        pauseBtnLabel.innerText = 'Menu / Pause';
+        agentStatusBadge.innerText = 'STATUS: READY';
+        gameStatusIndicator.className = 'w-2 h-2 rounded-full bg-slate-500';
+      }
+    }
+
+    function startGame() {
+      gameState = 'PLAYING';
+      arcadeMenuModal.classList.add('hidden');
+      game.reset();
+      pauseBtnLabel.innerText = 'Pause Game';
+      agentStatusBadge.innerText = playMode === 'AI' ? 'STATUS: AI TRAINING' : 'STATUS: HUMAN FLYING';
+      gameStatusIndicator.className = 'w-2 h-2 rounded-full bg-emerald-400 animate-pulse';
+      showNotification('Game Started!');
+    }
+
+    function resumeGame() {
+      if (gameState === 'PAUSED') {
+        gameState = 'PLAYING';
+        arcadeMenuModal.classList.add('hidden');
+        pauseBtnLabel.innerText = 'Pause Game';
+        agentStatusBadge.innerText = playMode === 'AI' ? 'STATUS: AI TRAINING' : 'STATUS: HUMAN FLYING';
+        gameStatusIndicator.className = 'w-2 h-2 rounded-full bg-emerald-400 animate-pulse';
+        showNotification('Game Resumed');
+      }
+    }
+
+    function quitGame() {
+      gameState = 'MENU';
+      game.reset();
+      openMenu(false);
+      showNotification('Returned to Standby Menu');
+    }
+
+    // Menu button listeners
+    menuStartBtn.addEventListener('click', startGame);
+    menuResumeBtn.addEventListener('click', resumeGame);
+    menuQuitBtn.addEventListener('click', quitGame);
+
+    pauseGameBtn.addEventListener('click', () => {
+      if (gameState === 'PLAYING') {
+        openMenu(true);
+      } else if (gameState === 'PAUSED') {
+        resumeGame();
+      } else {
+        startGame();
+      }
+    });
+
+    // Pilot selection within menu
+    menuPilotAiBtn.addEventListener('click', () => {
+      playMode = 'AI';
+      headerModeLabel.innerText = 'AI TRAINING';
+      menuPilotAiBtn.className = 'px-3 py-1 rounded-lg bg-cyan-500 text-black font-bold';
+      menuPilotHumanBtn.className = 'px-3 py-1 rounded-lg text-slate-400 hover:text-white';
+    });
+
+    menuPilotHumanBtn.addEventListener('click', () => {
+      playMode = 'HUMAN';
+      headerModeLabel.innerText = 'HUMAN PILOT';
+      menuPilotHumanBtn.className = 'px-3 py-1 rounded-lg bg-cyan-500 text-black font-bold';
+      menuPilotAiBtn.className = 'px-3 py-1 rounded-lg text-slate-400 hover:text-white';
+    });
+
+    // ----------------------------------------------------
+    // Simulation Logic
+    // ----------------------------------------------------
+    function runSimulationStep() {
+      const nextPipe = game.getNextPipe();
+      const stateKey = agent.getStateKey(game.bird, nextPipe);
+      let action = 0;
+
+      if (playMode === 'AI') {
+        action = agent.selectAction(stateKey);
+        currentAgentAction = action;
+      } else {
+        action = pendingHumanJump ? 1 : 0;
+        pendingHumanJump = false;
+        currentAgentAction = action;
+      }
+
+      const { reward, done, passedPipe, rewardType } = game.step(action);
+
+      // Record reward categories
+      if (rewardType === 'survive') rewardStats.survive++;
+      else if (rewardType === 'pipe') rewardStats.pipe++;
+      else if (rewardType === 'crash') rewardStats.crash++;
+
+      // RL learning updates
+      const nextPipeAfter = game.getNextPipe();
+      const nextStateKey = agent.getStateKey(game.bird, nextPipeAfter);
+      agent.update(stateKey, action, reward, nextStateKey, done);
+
+      if (playMode === 'AI') {
+        agent.decayEpsilon();
+      }
+
+      if (done) {
+        episodeCount++;
+        scoreHistory.push(game.score);
+        if (scoreHistory.length > 50) scoreHistory.shift();
+
+        updateScoreChart(episodeCount, game.score);
+        updateRewardChart();
+        refreshQTablePreview();
+
+        game.reset();
+
+        if (playMode === 'HUMAN') {
+          openMenu(false);
+          menuTitle.innerHTML = 'GAME <span class="text-rose-400">OVER</span>';
+          menuSubtitle.innerText = `Final Score: ${game.score} | Best: ${game.highScore}`;
+          menuStartText.innerText = 'PLAY AGAIN';
+        }
+      }
+
+      return { stateKey, action, done };
+    }
+
+    function updateScoreChart(episode, score) {
+      const recent = scoreHistory.slice(-10);
+      const avg = recent.reduce((a, b) => a + b, 0) / recent.length;
+
+      learningChart.data.labels.push(`E${episode}`);
+      learningChart.data.datasets[0].data.push(score);
+      learningChart.data.datasets[1].data.push(parseFloat(avg.toFixed(1)));
+
+      if (learningChart.data.labels.length > 25) {
+        learningChart.data.labels.shift();
+        learningChart.data.datasets[0].data.shift();
+        learningChart.data.datasets[1].data.shift();
+      }
+      learningChart.update();
+    }
+
+    function updateRewardChart() {
+      rewardSurviveCounter.innerText = rewardStats.survive;
+      rewardPipeCounter.innerText = rewardStats.pipe;
+      rewardCrashCounter.innerText = rewardStats.crash;
+
+      rewardChart.data.datasets[0].data = [
+        rewardStats.survive,
+        rewardStats.pipe * 15,
+        rewardStats.crash
+      ];
+      rewardChart.update();
+    }
+
+    function updateDashboardUI(lastStateKey) {
+      metricEpisode.innerText = episodeCount;
+      metricScore.innerText = game.score;
+      canvasHighScore.innerText = game.highScore;
+
+      const recent25 = scoreHistory.slice(-25);
+      const avg25 = recent25.length ? (recent25.reduce((a, b) => a + b, 0) / recent25.length).toFixed(1) : '0.0';
+      metricAvgScore.innerText = avg25;
+
+      metricEpsilon.innerText = agent.epsilon.toFixed(3);
+      valEpsilon.innerText = agent.epsilon.toFixed(3);
+      inputEpsilon.value = agent.epsilon.toFixed(2);
+      statesCountBadge.innerText = `${agent.getDiscoveredStatesCount()} DISCOVERED STATES`;
+
+      const nextPipe = game.getNextPipe();
+      if (nextPipe) {
+        const dx = Math.round((nextPipe.x + PIPE_WIDTH) - game.bird.x);
+        const gapCenterY = nextPipe.topHeight + (PIPE_GAP / 2);
+        const dy = Math.round(gapCenterY - game.bird.y);
+
+        stateDistX.innerText = `${dx} px`;
+        stateDistY.innerText = `${dy} px`;
+        stateVel.innerText = game.bird.velocity.toFixed(1);
+        stateIndexHash.innerText = `HASH: ${lastStateKey || '---'}`;
+
+        if (dy < -5) activeStatePill.innerText = 'STATUS: BELOW GAP';
+        else if (dy > 15) activeStatePill.innerText = 'STATUS: ABOVE GAP';
+        else activeStatePill.innerText = 'STATUS: IN GAP SWEETSPOT';
+      }
+
+      if (lastStateKey) {
+        const qVals = agent.getQValues(lastStateKey);
+        const qW = qVals[0];
+        const qJ = qVals[1];
+
+        qWaitValue.innerText = qW.toFixed(1);
+        qJumpValue.innerText = qJ.toFixed(1);
+
+        const absSum = Math.abs(qW) + Math.abs(qJ) + 0.001;
+        const wPct = Math.min(100, Math.max(5, (Math.abs(qW) / absSum) * 100));
+        const jPct = Math.min(100, Math.max(5, (Math.abs(qJ) / absSum) * 100));
+
+        qWaitBar.style.width = `${wPct}%`;
+        qJumpBar.style.width = `${jPct}%`;
+
+        policyVerdict.innerText = currentAgentAction === 1 ? 'ACTION: JUMP (FLAP)' : 'ACTION: WAIT (GLIDE)';
+        policyVerdict.className = currentAgentAction === 1
+          ? 'text-[11px] font-mono text-emerald-400 bg-emerald-950/80 px-2 py-0.5 rounded border border-emerald-800'
+          : 'text-[11px] font-mono text-cyan-400 bg-cyan-950/80 px-2 py-0.5 rounded border border-cyan-800';
+      }
+    }
+
+    let lastTime = performance.now();
+    let frameCounter = 0;
+
+    function mainLoop(now) {
+      const delta = now - lastTime;
+      frameCounter++;
+      if (delta >= 1000) {
+        const fpsVal = Math.round((frameCounter * 1000) / delta);
+        fpsCounter.innerText = fpsVal;
+        frameCounter = 0;
+        lastTime = now;
+      }
+
+      if (gameState === 'PLAYING') {
+        let lastKey = null;
+
+        if (simSpeed === 'turbo') {
+          for (let i = 0; i < 60; i++) {
+            const res = runSimulationStep();
+            lastKey = res.stateKey;
+          }
+        } else if (simSpeed === 0.75) {
+          // Accumulate 0.75 ticks per frame (3 steps every 4 frames)
+          speedAccumulator += 0.75;
+          while (speedAccumulator >= 1.0) {
+            const res = runSimulationStep();
+            lastKey = res.stateKey;
+            speedAccumulator -= 1.0;
+          }
+        } else {
+          const steps = typeof simSpeed === 'number' ? simSpeed : 1;
+          for (let i = 0; i < steps; i++) {
+            const res = runSimulationStep();
+            lastKey = res.stateKey;
+          }
+        }
+
+        game.render(showSensoryRays, currentAgentAction);
+        updateDashboardUI(lastKey);
+      } else {
+        // While in menu or paused, render idle state
+        game.render(showSensoryRays, 0);
+      }
+
+      requestAnimationFrame(mainLoop);
+    }
+
+    function updateSpeedButtons(activeSpeed) {
+      speedButtons.forEach(btn => {
+        const val = btn.getAttribute('data-speed');
+        const matches = val === 'turbo' ? activeSpeed === 'turbo' : parseFloat(val) === activeSpeed;
+        if (matches) {
+          btn.className = 'speed-btn px-2 py-1 rounded-lg transition-all active font-mono font-bold bg-cyan-950 text-cyan-400 border border-cyan-800';
+        } else {
+          btn.className = 'speed-btn px-2 py-1 rounded-lg text-slate-300 hover:text-white transition-all font-mono';
+        }
+      });
+    }
+
+    speedButtons.forEach(btn => {
+      btn.addEventListener('click', () => {
+        const val = btn.getAttribute('data-speed');
+        simSpeed = val === 'turbo' ? 'turbo' : parseFloat(val);
+        speedAccumulator = 0;
+        updateSpeedButtons(simSpeed);
+        showNotification(`Speed set to ${val === 'turbo' ? 'TURBO' : val + 'x'}`);
+      });
+    });
+
+    function triggerJump() {
+      if (gameState === 'PLAYING' && playMode === 'HUMAN') {
+        pendingHumanJump = true;
+        sound.playJump();
+      }
+    }
+
+    canvas.addEventListener('click', triggerJump);
+    window.addEventListener('keydown', (e) => {
+      if (e.code === 'Space') {
+        e.preventDefault();
+        triggerJump();
+      } else if (e.key === 'p' || e.key === 'P' || e.key === 'Escape') {
+        if (gameState === 'PLAYING') openMenu(true);
+        else if (gameState === 'PAUSED') resumeGame();
+      }
+    });
+
+    // Hyperparameter sliders
+    inputAlpha.addEventListener('input', (e) => {
+      agent.alpha = parseFloat(e.target.value);
+      valAlpha.innerText = agent.alpha.toFixed(2);
+    });
+
+    inputGamma.addEventListener('input', (e) => {
+      agent.gamma = parseFloat(e.target.value);
+      valGamma.innerText = agent.gamma.toFixed(2);
+    });
+
+    inputEpsilon.addEventListener('input', (e) => {
+      agent.epsilon = parseFloat(e.target.value);
+      valEpsilon.innerText = agent.epsilon.toFixed(2);
+    });
+
+    toggleSensoryRays.addEventListener('change', (e) => {
+      showSensoryRays = e.target.checked;
+    });
+
+    // Pretrained Weights & Management
+    loadSmartModelBtn.addEventListener('click', () => {
+      agent.qTable = generateSmartQWeights();
+      agent.epsilon = 0.01;
+      refreshQTablePreview();
+      showNotification('Loaded Pre-trained Pro Weights! Ready to dominate.');
+    });
+
+    resetModelBtn.addEventListener('click', () => {
+      agent.reset();
+      agent.epsilon = 0.2;
+      scoreHistory = [];
+      learningChart.data.labels = [];
+      learningChart.data.datasets[0].data = [];
+      learningChart.data.datasets[1].data = [];
+      learningChart.update();
+      rewardStats.survive = 0;
+      rewardStats.pipe = 0;
+      rewardStats.crash = 0;
+      updateRewardChart();
+      refreshQTablePreview();
+      game.reset();
+      showNotification('Agent Memory Reset');
+    });
+
+    exportModelBtn.addEventListener('click', () => {
+      const json = JSON.stringify(agent.qTable);
+      const blob = new Blob([json], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `cyberflap_qtable_${Date.now()}.json`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      showNotification('Q-Table JSON Exported');
+    });
+
+    importModelInput.addEventListener('change', (e) => {
+      const file = e.target.files[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        try {
+          const parsed = JSON.parse(event.target.result);
+          agent.qTable = parsed;
+          refreshQTablePreview();
+          showNotification('Imported Q-Table Successfully');
+        } catch (err) {
+          showNotification('Invalid JSON file format');
+        }
+      };
+      reader.readAsText(file);
+    });
+
+    soundToggleBtn.addEventListener('click', () => {
+      sound.enabled = !sound.enabled;
+      if (sound.enabled) {
+        sound.init();
+        soundIcon.setAttribute('data-lucide', 'volume-2');
+        soundText.innerText = 'AUDIO ON';
+        soundIcon.classList.remove('text-rose-400');
+        soundIcon.classList.add('text-emerald-400');
+      } else {
+        soundIcon.setAttribute('data-lucide', 'volume-x');
+        soundText.innerText = 'AUDIO OFF';
+        soundIcon.classList.remove('text-emerald-400');
+        soundIcon.classList.add('text-rose-400');
+      }
+      lucide.createIcons();
+    });
+
+    // Start in initial Menu mode
+    window.onload = function() {
+      openMenu(false);
+      refreshQTablePreview();
+      requestAnimationFrame(mainLoop);
+    };
+  </script>
+</body>
+</html>
